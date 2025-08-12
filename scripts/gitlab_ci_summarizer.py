@@ -62,8 +62,8 @@ def get_gitlab_mr_diff():
     try:
         result = subprocess.run(
             git_command,
-            capture_output=True, 
-            text=True, 
+            capture_output=True,
+            text=True,
             encoding='utf-8',
             errors='replace',
             timeout=60,
@@ -85,7 +85,26 @@ def get_gitlab_mr_diff():
             
             lines = diff_content.count('\n')
             logger.info(f"Diff contains {lines} lines")
-            
+
+            diff_files = subprocess.run(
+                ['git', 'diff', '--name-only', 'HEAD~1...HEAD'],
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            logger.info(f"Diff file list (HEAD~1...HEAD):\n{diff_files.stdout}")
+
+            if commit_sha:
+                result_files = subprocess.run(
+                    ['git', 'diff', '--name-only', f"{target_branch}...{commit_sha}"],
+                    capture_output=True,
+                    text=True,
+                    timeout=60
+                )
+                logger.info(
+                    f"Files vs target branch ({target_branch}...{commit_sha}):\n{result_files.stdout}"
+                )
+
             return diff_content.strip()
         else:
             logger.error(f"❌ Git command failed (code {result.returncode}): {result.stderr[:200]}")
@@ -260,11 +279,14 @@ def run_rqc(qc_slug, input_data, retries=1):
 def split_diff(diff):
     """Split complete diff into per-file diffs."""
     import re
-    
+
     diff_blocks = re.split(r'(?=^diff --git)', diff, flags=re.MULTILINE)
     diff_blocks = [block.strip() for block in diff_blocks if block.strip()]
-    
+
     logger.info(f"Split diff into {len(diff_blocks)} file diffs")
+    for block in diff_blocks:
+        first_line = block.splitlines()[0]
+        logger.info(f"Detected file diff: {first_line}")
     return diff_blocks
 
 def string_size_in_bytes(string):
@@ -320,14 +342,21 @@ def prepare_file_diffs(file_diffs):
     """Batch file diffs optimally for RQC processing."""
     joint_diffs = []
     current_joint_diff = ""
-    
+
     for index, file_diff in enumerate(file_diffs):
+        first_line = file_diff.splitlines()[0] if file_diff else ""
         file_diff_simplified = file_diff
-        
+
         if string_is_too_large(file_diff):
             file_diff_simplified = simplify_file_diff(file_diff)
-            logger.info(f"Simplified large file diff (original size: {string_size_in_bytes(file_diff)} bytes)")
-        
+            logger.warning(
+                f"Simplified file diff for {first_line} (size {string_size_in_bytes(file_diff)} bytes)"
+            )
+
+        logger.info(
+            f"File diff {index + 1}/{len(file_diffs)}: {first_line} ({string_size_in_bytes(file_diff_simplified)} bytes)"
+        )
+
         if string_is_too_large(current_joint_diff + file_diff_simplified):
             if current_joint_diff:  # Don't append empty string
                 joint_diffs.append(current_joint_diff)
@@ -337,10 +366,15 @@ def prepare_file_diffs(file_diffs):
         
         if index == len(file_diffs) - 1:
             joint_diffs.append(current_joint_diff)
-    
+
     joint_diffs_sizes = [string_size_in_bytes(diff) for diff in joint_diffs]
     logger.info(f"Created {len(joint_diffs)} batched diffs with sizes: {joint_diffs_sizes} bytes")
-    
+    for i, diff in enumerate(joint_diffs):
+        batch_file_headers = [blk.splitlines()[0] for blk in split_diff(diff)]
+        logger.info(
+            f"Batch {i + 1}: {string_size_in_bytes(diff)} bytes, files: {batch_file_headers}"
+        )
+
     return joint_diffs
 
 def get_partial_summary_inputs(diff):
@@ -382,17 +416,19 @@ def parse_json_response(response):
 def get_partial_summaries(diff):
     """Get partial summaries for all files in diff."""
     inputs = get_partial_summary_inputs(diff)
-    
+
     partial_summaries = []
-    
+
     for i, input_data in enumerate(inputs):
         logger.info(f"Processing partial summary batch {i + 1}/{len(inputs)}")
-        
+        batch_preview = "\n".join(input_data.splitlines()[0:5])
+        logger.info(f"Batch {i + 1} includes:\n{batch_preview}")
+
         try:
             partial_summary_response = run_rqc(RQC_PARTIAL_SUMMARY_SLUG, input_data)
             partial_summary = parse_json_response(partial_summary_response)
-            
             if partial_summary:
+                logger.info(f"Partial summary for batch {i + 1}: {partial_summary}")
                 if isinstance(partial_summary, list):
                     partial_summaries.extend(partial_summary)
                 else:
@@ -400,8 +436,9 @@ def get_partial_summaries(diff):
         except Exception as e:
             logger.error(f"Failed to get partial summary for batch {i + 1}: {e}")
             continue
-    
+
     logger.info(f"Generated {len(partial_summaries)} partial summaries")
+    logger.info(f"Files summarized: {[ps.get('file') for ps in partial_summaries]}")
     return partial_summaries
 
 def get_total_summary(partial_summaries):
