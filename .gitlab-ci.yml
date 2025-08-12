@@ -1,0 +1,72 @@
+stages:
+  - debug
+  - test
+  - summarize
+
+debug-env:
+  stage: debug
+  image: python:3.12-slim
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: always
+  script:
+    - echo "CI_PROJECT_ID=$CI_PROJECT_ID"
+    - echo "CI_MERGE_REQUEST_IID=$CI_MERGE_REQUEST_IID" 
+    - echo "CI_API_V4_URL=$CI_API_V4_URL"
+    - echo "Expected URL--- BELLOW!"
+    - echo "$CI_API_V4_URL/projects/\$CI_PROJECT_ID/merge_requests/\$CI_MERGE_REQUEST_IID/changes"
+
+variables:
+  # StackSpot AI configuration - set in GitLab CI/CD Variables  
+  STACKSPOT_CLIENT_ID: $STACKSPOT_CLIENT_ID
+  STACKSPOT_CLIENT_SECRET: $STACKSPOT_CLIENT_SECRET
+  STACKSPOT_CLIENT_REALM: $STACKSPOT_CLIENT_REALM
+
+# Test job to validate configuration
+test-configuration:
+  stage: test
+  image: python:3.12-slim
+  rules:
+    # Run on merge request events
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: always
+    # Also run on main branch for validation
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  before_script:
+    - apt-get update && apt-get install -y git
+    - git config --global --add safe.directory $CI_PROJECT_DIR
+    - pip install --no-cache-dir requests
+  script:
+    - python scripts/test_gitlab_ci.py
+  allow_failure: true
+
+# Main MR summarizer job
+mr-summarizer:
+  stage: summarize
+  image: python:3.12-slim
+  rules:
+    # Only run on merge request events
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: always
+    # Also allow manual trigger for testing
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+    # Skip for other pipeline sources
+    - when: never
+  before_script:
+    # Install required dependencies
+    - apt-get update && apt-get install -y git
+    - git config --global --add safe.directory $CI_PROJECT_DIR
+    - pip install --no-cache-dir requests
+  script:
+    # Run the MR summarizer script
+    - python scripts/gitlab_ci_summarizer.py
+  timeout: 15m
+  allow_failure: true  # Don't block MR if summary fails
+  retry:
+    max: 2
+    when: runner_system_failure
+  needs:
+    - job: test-configuration
+      optional: true
