@@ -46,7 +46,7 @@ def get_gitlab_mr_diff():
     logger.info(f"Method: Git commands (reliable, no API limitations)")
     
     if not source_branch:
-        logger.error("CI_MERGE_REQUEST_SOURCE_BRANCH_NAME not available")
+        logger.error("❌ CI_MERGE_REQUEST_SOURCE_BRANCH_NAME not available")
         raise ValueError("Source branch name required for git diff")
     
     commit_sha = os.environ.get('CI_COMMIT_SHA')
@@ -62,8 +62,8 @@ def get_gitlab_mr_diff():
     try:
         result = subprocess.run(
             git_command,
-            capture_output=True, 
-            text=True, 
+            capture_output=True,
+            text=True,
             encoding='utf-8',
             errors='replace',
             timeout=60,
@@ -80,20 +80,39 @@ def get_gitlab_mr_diff():
             logger.info(f"Diff encoding validated, size: {len(diff_content)} chars")
             
             if not diff_content.strip():
-                logger.warning("Empty diff - no changes between branches")
+                logger.warning("⚠️ Empty diff - no changes between branches")
                 return ""
             
             lines = diff_content.count('\n')
             logger.info(f"Diff contains {lines} lines")
-            
+
+            diff_files = subprocess.run(
+                ['git', 'diff', '--name-only', 'HEAD~1...HEAD'],
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            logger.info(f"Diff file list (HEAD~1...HEAD):\n{diff_files.stdout}")
+
+            if commit_sha:
+                result_files = subprocess.run(
+                    ['git', 'diff', '--name-only', f"{target_branch}...{commit_sha}"],
+                    capture_output=True,
+                    text=True,
+                    timeout=60
+                )
+                logger.info(
+                    f"Files vs target branch ({target_branch}...{commit_sha}):\n{result_files.stdout}"
+                )
+
             return diff_content.strip()
         else:
             logger.error(f"❌ Git command failed (code {result.returncode}): {result.stderr[:200]}")
             raise ValueError("Git diff command failed in CI environment")
             
     except FileNotFoundError:
-        logger.error("Git command not found. Ensure git is installed in CI environment.")
-        logger.error("Check .gitlab-ci.yml before_script includes: apt-get update && apt-get install -y git")
+        logger.error("❌ Git command not found. Ensure git is installed in CI environment.")
+        logger.error("❌ Check .gitlab-ci.yml before_script includes: apt-get update && apt-get install -y git")
         raise ValueError("Git not available in CI environment")
     except subprocess.TimeoutExpired:
         logger.error("❌ Git command timed out")
@@ -134,18 +153,18 @@ def post_gitlab_mr_comment(comment_body):
     logger.info(f"Response headers: {dict(response.headers)}")
     
     if response.status_code not in [200, 201]:
-        logger.error(f"Failed to post MR comment: {response.status_code}")
+        logger.error(f"❌ Failed to post MR comment: {response.status_code}")
         logger.error(f"Response body: {response.text[:500]}")
         if response.status_code == 401:
-            logger.error("Diagnosis: 401 = Authentication failed with GITLAB_PERSONAL_TOKEN")
+            logger.error("❌ Diagnosis: 401 = Authentication failed with GITLAB_PERSONAL_TOKEN")
         elif response.status_code == 403:
-            logger.error("Diagnosis: 403 = GITLAB_PERSONAL_TOKEN lacks permissions to post comments")
+            logger.error("❌ Diagnosis: 403 = GITLAB_PERSONAL_TOKEN lacks permissions to post comments")
         elif response.status_code == 404:
-            logger.error("Diagnosis: 404 = Merge request not found or project access denied")
-    
+            logger.error("❌ Diagnosis: 404 = Merge request not found or project access denied")
+
     response.raise_for_status()
-    
-    logger.info("Successfully posted comment to MR")
+
+    logger.info("✅ Successfully posted comment to MR")
     return response.json()
 
 def get_stackspot_access_token():
@@ -166,7 +185,7 @@ def get_stackspot_access_token():
     response.raise_for_status()
     
     token_data = response.json()
-    logger.info("Successfully obtained StackSpot access token")
+    logger.info("✅ Successfully obtained StackSpot access token")
     return token_data["access_token"]
 
 def stackspot_make_request(method, url, body=None, retries=3):
@@ -191,7 +210,7 @@ def stackspot_make_request(method, url, body=None, retries=3):
             
         except requests.exceptions.HTTPError as e:
             if attempt < retries and e.response.status_code in [401, 403, 500, 503]:
-                logger.info(f"Got status code {e.response.status_code} on attempt {attempt}, retrying...")
+                logger.warning(f"⚠️ Got status code {e.response.status_code} on attempt {attempt}, retrying...")
                 sleep(2**(attempt+1))
                 continue
             raise
@@ -203,9 +222,9 @@ def create_rqc_execution(qc_slug, input_data):
     
     logger.info(f"Creating RQC execution for {qc_slug}")
     response_data = stackspot_make_request("POST", url, body)
-    
+
     execution_id = response_data
-    logger.info(f"Created RQC execution with ID: {execution_id}")
+    logger.info(f"✅ Created RQC execution with ID: {execution_id}")
     return execution_id
 
 def poll_rqc_execution(execution_id):
@@ -219,20 +238,20 @@ def poll_rqc_execution(execution_id):
         if response_data and "progress" in response_data:
             status = response_data["progress"]["status"]
         else:
-            logger.error(f"Invalid response data: {response_data}")
+            logger.error(f"❌ Invalid response data: {response_data}")
             return None
         logger.debug(f"Polling attempt {attempt}: status = {status}")
         
         if status == RQC_STATUS_COMPLETED:
-            logger.info(f"RQC execution completed in ~{execution_time} seconds")
+            logger.info(f"✅ RQC execution completed in ~{execution_time} seconds")
             if "result" in response_data:
                 return response_data["result"]
             else:
-                logger.error(f"No result in completed response: {response_data}")
+                logger.error(f"❌ No result in completed response: {response_data}")
                 return None
         
         if status == RQC_STATUS_FAILED:
-            logger.error(f"RQC execution failed: {response_data}")
+            logger.error(f"❌ RQC execution failed: {response_data}")
             raise StackSpotAIError(f"RQC execution failed: {response_data}")
         
         execution_time += RQC_SECONDS_TO_WAIT
@@ -249,22 +268,25 @@ def run_rqc(qc_slug, input_data, retries=1):
             return result
         except RQCExecutionTimeoutError:
             if attempt < retries:
-                logger.info(f"RQC execution timed out, retrying... (attempt {attempt + 1})")
+                logger.warning(f"⚠️ RQC execution timed out, retrying... (attempt {attempt + 1})")
                 continue
-            logger.error("RQC execution failed due to timeout")
+            logger.error("❌ RQC execution failed due to timeout")
             raise
         except StackSpotAIError:
-            logger.error("RQC execution failed due to StackSpot AI error")
+            logger.error("❌ RQC execution failed due to StackSpot AI error")
             raise
 
 def split_diff(diff):
     """Split complete diff into per-file diffs."""
     import re
-    
+
     diff_blocks = re.split(r'(?=^diff --git)', diff, flags=re.MULTILINE)
     diff_blocks = [block.strip() for block in diff_blocks if block.strip()]
-    
+
     logger.info(f"Split diff into {len(diff_blocks)} file diffs")
+    for block in diff_blocks:
+        first_line = block.splitlines()[0]
+        logger.info(f"Detected file diff: {first_line}")
     return diff_blocks
 
 def string_size_in_bytes(string):
@@ -282,7 +304,7 @@ def validate_encoding(text, encoding='utf-8'):
             return text.decode(encoding, errors='replace')
         return text.encode(encoding, errors='replace').decode(encoding)
     except Exception as e:
-        logger.warning(f"Encoding validation failed: {e}")
+        logger.warning(f"⚠️ Encoding validation failed: {e}")
         return text.encode('ascii', errors='replace').decode('ascii')
 
 def sanitize_for_json(text):
@@ -292,14 +314,14 @@ def sanitize_for_json(text):
         json.dumps(text)
         return text
     except (UnicodeDecodeError, TypeError):
-        logger.warning("Text contains invalid unicode, sanitizing...")
+        logger.warning("⚠️ Text contains invalid unicode, sanitizing...")
         return text.encode('utf-8', errors='replace').decode('utf-8')
 
 def validate_comment_size(comment_body):
     """Validate GitLab comment size and truncate if needed."""
     comment_size_bytes = len(comment_body.encode('utf-8'))
     if comment_size_bytes > 1048576:  # 1MB GitLab limit
-        logger.warning(f"Comment too large ({comment_size_bytes} bytes), truncating...")
+        logger.warning(f"⚠️ Comment too large ({comment_size_bytes} bytes), truncating...")
         return comment_body[:1048000] + "\n\n... (truncated due to size limit)"
     return comment_body
 
@@ -320,14 +342,21 @@ def prepare_file_diffs(file_diffs):
     """Batch file diffs optimally for RQC processing."""
     joint_diffs = []
     current_joint_diff = ""
-    
+
     for index, file_diff in enumerate(file_diffs):
+        first_line = file_diff.splitlines()[0] if file_diff else ""
         file_diff_simplified = file_diff
-        
+
         if string_is_too_large(file_diff):
             file_diff_simplified = simplify_file_diff(file_diff)
-            logger.info(f"Simplified large file diff (original size: {string_size_in_bytes(file_diff)} bytes)")
-        
+            logger.warning(
+                f"⚠️ Simplified file diff for {first_line} (size {string_size_in_bytes(file_diff)} bytes)"
+            )
+
+        logger.info(
+            f"File diff {index + 1}/{len(file_diffs)}: {first_line} ({string_size_in_bytes(file_diff_simplified)} bytes)"
+        )
+
         if string_is_too_large(current_joint_diff + file_diff_simplified):
             if current_joint_diff:  # Don't append empty string
                 joint_diffs.append(current_joint_diff)
@@ -337,10 +366,15 @@ def prepare_file_diffs(file_diffs):
         
         if index == len(file_diffs) - 1:
             joint_diffs.append(current_joint_diff)
-    
+
     joint_diffs_sizes = [string_size_in_bytes(diff) for diff in joint_diffs]
-    logger.info(f"Created {len(joint_diffs)} batched diffs with sizes: {joint_diffs_sizes} bytes")
-    
+    logger.info(f"✅ Created {len(joint_diffs)} batched diffs with sizes: {joint_diffs_sizes} bytes")
+    for i, diff in enumerate(joint_diffs):
+        batch_file_headers = [blk.splitlines()[0] for blk in split_diff(diff)]
+        logger.info(
+            f"Batch {i + 1}: {string_size_in_bytes(diff)} bytes, files: {batch_file_headers}"
+        )
+
     return joint_diffs
 
 def get_partial_summary_inputs(diff):
@@ -373,47 +407,50 @@ def parse_json_response(response):
     
     try:
         parsed_response = loads(response)
-        logger.info(f"Parsed StackSpot response: {parsed_response}")
+        logger.info(f"✅ Parsed StackSpot response: {parsed_response}")
         return parsed_response
     except Exception as e:
-        logger.error(f"Failed to parse JSON response: {e}")
+        logger.error(f"❌ Failed to parse JSON response: {e}")
         return {}
 
 def get_partial_summaries(diff):
     """Get partial summaries for all files in diff."""
     inputs = get_partial_summary_inputs(diff)
-    
+
     partial_summaries = []
-    
+
     for i, input_data in enumerate(inputs):
         logger.info(f"Processing partial summary batch {i + 1}/{len(inputs)}")
-        
+        batch_preview = "\n".join(input_data.splitlines()[0:5])
+        logger.info(f"Batch {i + 1} includes:\n{batch_preview}")
+
         try:
             partial_summary_response = run_rqc(RQC_PARTIAL_SUMMARY_SLUG, input_data)
             partial_summary = parse_json_response(partial_summary_response)
-            
             if partial_summary:
+                logger.info(f"✅ Partial summary for batch {i + 1}: {partial_summary}")
                 if isinstance(partial_summary, list):
                     partial_summaries.extend(partial_summary)
                 else:
                     partial_summaries.append(partial_summary)
         except Exception as e:
-            logger.error(f"Failed to get partial summary for batch {i + 1}: {e}")
+            logger.error(f"❌ Failed to get partial summary for batch {i + 1}: {e}")
             continue
-    
-    logger.info(f"Generated {len(partial_summaries)} partial summaries")
+
+    logger.info(f"✅ Generated {len(partial_summaries)} partial summaries")
+    logger.info(f"📄 Files summarized: {[ps.get('file') for ps in partial_summaries]}")
     return partial_summaries
 
 def get_total_summary(partial_summaries):
     """Get total summary from partial summaries."""
-    logger.info("Generating total summary from partial summaries")
+    logger.info("🧮 Generating total summary from partial summaries")
     
     try:
         comment_response = run_rqc(RQC_TOTAL_SUMMARY_SLUG, dumps(partial_summaries))
         comment = strip_response(comment_response)
         return comment
     except Exception as e:
-        logger.error(f"Failed to generate total summary: {e}")
+        logger.error(f"❌ Failed to generate total summary: {e}")
         return "❌ **Failed to generate AI summary**\n\nThere was an error processing the merge request changes with StackSpot AI. Please review the changes manually."
 
 def main():
@@ -427,8 +464,8 @@ def main():
         
         missing_vars = [var for var in required_vars if not os.environ.get(var)]
         if missing_vars:
-            logger.error(f"Missing required environment variables: {missing_vars}")
-            logger.error("Expected: All variables should be set in GitLab CI/CD settings")
+            logger.error(f"❌ Missing required environment variables: {missing_vars}")
+            logger.error("❌ Expected: All variables should be set in GitLab CI/CD settings")
             for var in missing_vars:
                 logger.error(f"  {var}: {'SET' if os.environ.get(var) else 'NOT SET'}")
             sys.exit(1)
@@ -441,42 +478,42 @@ def main():
                 if value:
                     logger.info(f"  {var}: SET ({value[:8]}...{value[-4:]}) - {len(value)} chars")
                     if value.startswith('$'):
-                        logger.error(f"  WARNING: {var} appears to be unresolved variable: {value}")
+                        logger.error(f"  ⚠️ WARNING: {var} appears to be unresolved variable: {value}")
                 else:
                     logger.info(f"  {var}: NOT SET")
             else:
                 logger.info(f"  {var}: {value if value else 'NOT SET'}")
                 if value and value.startswith('$'):
-                    logger.error(f"  WARNING: {var} appears to be unresolved variable: {value}")
+                    logger.error(f"  ⚠️ WARNING: {var} appears to be unresolved variable: {value}")
         
         logger.info("Starting GitLab MR summarizer")
         
         diff = get_gitlab_mr_diff()
         
         if not diff.strip():
-            logger.info("No changes found in MR, skipping summary generation")
+            logger.warning("⚠️ No changes found in MR, skipping summary generation")
             return
         
         partial_summaries = get_partial_summaries(diff)
         
         if not partial_summaries:
-            logger.warning("No partial summaries generated, posting fallback comment")
+            logger.warning("⚠️ No partial summaries generated, posting fallback comment")
             comment = "📝 **AI Summary**\n\nNo significant changes detected for summary generation."
         else:
             comment = get_total_summary(partial_summaries)
         
         post_gitlab_mr_comment(comment)
-        
-        logger.info("Successfully completed MR summarization")
+
+        logger.info("✅ Successfully completed MR summarization")
         
     except Exception as e:
-        logger.error(f"Failed to process MR: {e}")
+        logger.error(f"❌ Failed to process MR: {e}")
         
         try:
             error_comment = f"❌ **AI Summary Failed**\n\nThere was an error generating the AI summary: `{str(e)}`\n\nPlease review the changes manually."
             post_gitlab_mr_comment(error_comment)
         except:
-            logger.error("Failed to post error comment to MR")
+            logger.error("❌ Failed to post error comment to MR")
         
         sys.exit(1)
 
