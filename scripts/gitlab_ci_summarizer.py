@@ -350,7 +350,9 @@ def prepare_file_diffs(file_diffs):
         if string_is_too_large(file_diff):
             file_diff_simplified = simplify_file_diff(file_diff)
             logger.warning(
+
                 f"⚠️ Simplified file diff for {first_line} (size {string_size_in_bytes(file_diff)} bytes)"
+
             )
 
         logger.info(
@@ -368,7 +370,9 @@ def prepare_file_diffs(file_diffs):
             joint_diffs.append(current_joint_diff)
 
     joint_diffs_sizes = [string_size_in_bytes(diff) for diff in joint_diffs]
+
     logger.info(f"✅ Created {len(joint_diffs)} batched diffs with sizes: {joint_diffs_sizes} bytes")
+
     for i, diff in enumerate(joint_diffs):
         batch_file_headers = [blk.splitlines()[0] for blk in split_diff(diff)]
         logger.info(
@@ -428,7 +432,9 @@ def get_partial_summaries(diff):
             partial_summary_response = run_rqc(RQC_PARTIAL_SUMMARY_SLUG, input_data)
             partial_summary = parse_json_response(partial_summary_response)
             if partial_summary:
+
                 logger.info(f"✅ Partial summary for batch {i + 1}: {partial_summary}")
+
                 if isinstance(partial_summary, list):
                     partial_summaries.extend(partial_summary)
                 else:
@@ -437,8 +443,10 @@ def get_partial_summaries(diff):
             logger.error(f"❌ Failed to get partial summary for batch {i + 1}: {e}")
             continue
 
+
     logger.info(f"✅ Generated {len(partial_summaries)} partial summaries")
     logger.info(f"📄 Files summarized: {[ps.get('file') for ps in partial_summaries]}")
+
     return partial_summaries
 
 def get_total_summary(partial_summaries):
