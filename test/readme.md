@@ -14,4 +14,4 @@ The script uses `npx` to download jscpd if necessary and scans the repository. T
 
 ## CI integration
 
-The `.gitlab-ci.yml` includes a `code-duplication` job in the `test` stage that runs the same script to prevent duplicated code from entering the repository.
+The `.gitlab-ci.yml` includes a `code-duplication` job in the `test` stage that runs the same script to prevent duplicated code from entering the repository. When triggered for a merge request, the job also posts a short summary of the scan back to the MR as a comment.

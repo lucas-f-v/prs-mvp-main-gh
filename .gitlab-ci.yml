@@ -49,8 +49,10 @@ code-duplication:
       when: always
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       when: manual
+  before_script:
+    - apk add --no-cache jq curl
   script:
-    - ./scripts/run-jscpd.sh
+    - ./scripts/jscpd-ci.sh
   allow_failure: false
 
 # Main MR summarizer job
