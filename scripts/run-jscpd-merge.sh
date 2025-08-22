@@ -5,6 +5,13 @@ TARGET_BRANCH="${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-main}"
 BASE_WORKTREE="jscpd-base-worktree"
 MERGED_WORKTREE="jscpd-merged-worktree"
 
+# Ensure we have the latest target branch when a remote is available
+if git remote get-url origin >/dev/null 2>&1; then
+  git fetch origin "$TARGET_BRANCH" >/dev/null
+else
+  echo "No remote named 'origin'; skipping fetch" >&2
+fi
+
 # Determine reference for target branch
 if git show-ref --verify --quiet "refs/remotes/origin/$TARGET_BRANCH"; then
   TARGET_REF="origin/$TARGET_BRANCH"
@@ -20,13 +27,6 @@ cleanup() {
   git worktree remove "$MERGED_WORKTREE" --force 2>/dev/null || true
 }
 trap cleanup EXIT
-
-# Ensure we have the latest target branch when a remote is available
-if git remote get-url origin >/dev/null 2>&1; then
-  git fetch origin "$TARGET_BRANCH" >/dev/null
-else
-  echo "No remote named 'origin'; skipping fetch" >&2
-fi
 
 # Run jscpd on the base branch
 git worktree add "$BASE_WORKTREE" "$TARGET_REF"
