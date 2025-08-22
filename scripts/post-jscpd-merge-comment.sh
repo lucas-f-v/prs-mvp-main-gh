@@ -10,16 +10,20 @@ if [[ ! -f "$BASE_FILE" || ! -f "$MERGED_FILE" ]]; then
 fi
 
 FORMATS=$(jq -r '.statistics.formats | keys[]' "$BASE_FILE" "$MERGED_FILE" | sort -u)
-TABLE="| Format | Base Duplicated Lines | Base % | Merged Duplicated Lines | Merged % |\n|---|---|---|---|---|"
+TABLE="| Format | Base Duplicated Lines | Base % | Merged Duplicated Lines | Merged % |
+|---|---|---|---|---|"
 for fmt in $FORMATS; do
   base_dup=$(jq -r --arg f "$fmt" '.statistics.formats[$f].total.duplicatedLines // 0' "$BASE_FILE")
   base_pct=$(jq -r --arg f "$fmt" '.statistics.formats[$f].total.percentage // 0' "$BASE_FILE")
   merged_dup=$(jq -r --arg f "$fmt" '.statistics.formats[$f].total.duplicatedLines // 0' "$MERGED_FILE")
   merged_pct=$(jq -r --arg f "$fmt" '.statistics.formats[$f].total.percentage // 0' "$MERGED_FILE")
-  TABLE="$TABLE\n| $fmt | $base_dup | ${base_pct}% | $merged_dup | ${merged_pct}% |"
+  TABLE="$TABLE
+| $fmt | $base_dup | ${base_pct}% | $merged_dup | ${merged_pct}% |"
 done
 
-COMMENT="### jscpd duplicate code report\n\n$TABLE"
+COMMENT="### jscpd duplicate code report
+
+$TABLE"
 
 : "${CI_API_V4_URL?CI_API_V4_URL not set}"
 : "${CI_PROJECT_ID?CI_PROJECT_ID not set}"
@@ -27,5 +31,5 @@ COMMENT="### jscpd duplicate code report\n\n$TABLE"
 : "${GITLAB_PERSONAL_TOKEN?GITLAB_PERSONAL_TOKEN not set}"
 
 curl --header "PRIVATE-TOKEN: $GITLAB_PERSONAL_TOKEN" \
-     --data-urlencode "body=$(printf '%s' "$COMMENT")" \
+     --data-urlencode "body=$(printf '%b' "$COMMENT")" \
      "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/notes"
