@@ -13,6 +13,7 @@ This project provides a **zero-infrastructure** solution for automatically gener
 - ✅ **Error Handling** - Graceful failure with informative error comments
 - ✅ **Large Diff Support** - Intelligent chunking and simplification for large changes
 - ✅ **Retry Logic** - Automatic retries for transient failures
+- ✅ **Duplicate Code Reports** - jscpd compares base and merged code and posts MR comments
 
 ## 🚀 Quick Start
 
@@ -43,6 +44,25 @@ Go to your project **Settings → CI/CD → Variables** and add:
 
 ### 4. Test
 Create a merge request with code changes and watch the AI summary appear automatically!
+
+### 5. Duplicate Code Report (optional)
+A `jscpd` job compares duplicate lines between the target branch and the merge
+result. It runs in the `code_quality` stage and posts a Markdown table to the
+merge request.
+
+To try it locally:
+
+```bash
+./scripts/run-jscpd-merge.sh
+CI_API_V4_URL=https://gitlab.com/api/v4 \
+CI_PROJECT_ID=123 \
+CI_MERGE_REQUEST_IID=1 \
+GITLAB_PERSONAL_TOKEN=your-token \
+./scripts/post-jscpd-merge-comment.sh
+```
+
+The scripts generate `jscpd-base.json` and `jscpd-merged.json` and clean up
+their temporary worktrees. The JSON files are ignored by git.
 
 ## 🔧 How It Works
 
@@ -80,6 +100,8 @@ The pipeline automatically:
 ├── .gitlab-ci.yml                    # CI/CD pipeline configuration
 ├── scripts/
 │   ├── gitlab_ci_summarizer.py       # Main summarizer script
+│   ├── post-jscpd-merge-comment.sh   # Post duplicate code table to MR
+│   ├── run-jscpd-merge.sh            # Generate jscpd reports for base/merged code
 │   └── test_gitlab_ci.py             # Configuration test script
 └── README.md                         # This file
 ```
