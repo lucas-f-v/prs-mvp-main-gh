@@ -1,6 +1,7 @@
 stages:
   - debug
   - test
+  - code_quality
   - summarize
 
 debug-env:
@@ -40,6 +41,26 @@ test-configuration:
   script:
     - python scripts/test_gitlab_ci.py
   allow_failure: true
+
+# jscpd duplicate code check
+jscpd-merge:
+  stage: code_quality
+  image: node:20
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: always
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  before_script:
+    - apt-get update && apt-get install -y git jq
+    - git config --global --add safe.directory $CI_PROJECT_DIR
+  script:
+    - scripts/run-jscpd-merge.sh
+    - scripts/post-jscpd-merge-comment.sh
+  allow_failure: true
+  needs:
+    - job: test-configuration
+      optional: true
 
 # Main MR summarizer job
 mr-summarizer:
