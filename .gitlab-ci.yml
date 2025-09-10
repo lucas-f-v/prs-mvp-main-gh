@@ -1,6 +1,7 @@
 stages:
   - debug
   - test
+  - code_quality
   - summarize
 
 debug-env:
@@ -41,19 +42,24 @@ test-configuration:
     - python scripts/test_gitlab_ci.py
   allow_failure: true
 
-code-duplication:
-  stage: test
-  image: node:20-alpine
+
+# jscpd duplicate code check
+jscpd-merge:
+  stage: code_quality
+  image: node:20
+
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       when: always
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       when: manual
   before_script:
+
     - apk add --no-cache jq curl
   script:
     - ./scripts/jscpd-ci.sh
   allow_failure: false
+
 
 # Main MR summarizer job
 mr-summarizer:
