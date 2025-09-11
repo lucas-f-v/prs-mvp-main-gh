@@ -27,14 +27,31 @@ percent=$(jq '.statistics.total.percentage' "$REPORT")
 
 comment=$(printf '🧬 **jscpd Report**\n\n- Clones: %s\n- Duplicated lines: %s / %s (%.2f%%)' "$clones" "$dup_lines" "$lines" "$percent")
 
-DIFF_FILTER="diff-filter-report.json"
-if [ -f "$DIFF_FILTER" ]; then
-  analyzed_list=$(jq -r '(.analyzed // []) | map("- " + .) | join("\n")' "$DIFF_FILTER")
-  ignored_list=$(jq -r '(.ignored // []) | map("- " + .) | join("\n")' "$DIFF_FILTER")
-  [ -n "$analyzed_list" ] || analyzed_list='- None'
-  [ -n "$ignored_list" ] || ignored_list='- None'
-  comment="$comment\n\n**Analyzed files**\n$analyzed_list\n\n**Ignored files**\n$ignored_list"
+duplicates_count=$(jq '.duplicates | length' "$REPORT")
+if [ "$duplicates_count" -gt 0 ]; then
+  table_rows=$(jq -r '.duplicates[] | "| \(.lines) | \(.firstFile.name):\(.firstFile.start)-\(.firstFile.end) | \(.secondFile.name):\(.secondFile.start)-\(.secondFile.end) |"' "$REPORT")
+  comment="$comment\n\n| Lines | First File | Second File |\n|---|---|---|\n$table_rows"
+else
+  comment="$comment\n\n_No duplicates found_"
 fi
+
+# Report which files pass or are blocked by diff_filter.json
+diff_data=$(git ls-files | python - <<'PY'
+import sys, json
+sys.path.append('scripts')
+from gitlab_ci_summarizer import should_include
+
+files=[line.strip() for line in sys.stdin if line.strip()]
+passed=[f for f in files if should_include(f)]
+blocked=[f for f in files if f not in passed]
+print(json.dumps({'passed': passed, 'blocked': blocked}))
+PY
+)
+passed_list=$(echo "$diff_data" | jq -r '.passed[]?' 2>/dev/null | sed 's/^/- /')
+blocked_list=$(echo "$diff_data" | jq -r '.blocked[]?' 2>/dev/null | sed 's/^/- /')
+[ -z "$passed_list" ] && passed_list="- (none)"
+[ -z "$blocked_list" ] && blocked_list="- (none)"
+comment="$comment\n\n**Diff Filter Results**\n\n_Passed files:_\n$passed_list\n\n_Blocked files:_\n$blocked_list"
 
 curl --silent --show-error --fail \
   --request POST \

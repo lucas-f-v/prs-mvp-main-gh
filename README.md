@@ -61,17 +61,26 @@ Create a merge request with code changes and watch the AI summary appear automat
 
 ### 5. Duplicate Code Report (optional)
 A `jscpd` job compares duplicate lines between the target branch and the merge
-result. It runs in the `code_quality` stage and posts a Markdown table to the
-merge request. Comments now list which files were analyzed and which were
-ignored:
+result. It runs in the `code_quality` stage and posts a Markdown table of any
+duplicated blocks to the merge request:
 
 ```markdown
-**Analyzed files**
-- src/app.py
-- src/utils/helpers.py
+| Lines | First File | Second File |
+|---|---|---|
+| 12 | src/app.py:10-21 | src/utils/helpers.py:42-53 |
+```
 
-**Ignored files**
-- test/test_app.py
+The comment also lists which files passed or were blocked by the optional
+`diff_filter.json`:
+
+```markdown
+**Diff Filter Results**
+
+_Passed files:_
+- scripts/post-jscpd-comment.sh
+
+_Blocked files:_
+- sample.js
 ```
 
 To try it locally:
