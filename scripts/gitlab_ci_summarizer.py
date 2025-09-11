@@ -24,6 +24,51 @@ RQC_TIMEOUT_MINUTES = 15
 RQC_SECONDS_TO_WAIT = 10
 RQC_TIMEOUT_LIMIT = int((RQC_TIMEOUT_MINUTES * 60) / RQC_SECONDS_TO_WAIT)
 
+def should_include(path: str) -> bool:
+    """Determine if a file path should be included in the diff.
+
+    This default implementation includes all paths.  Tests can inject a
+    different function to apply custom allow/deny rules.
+    """
+    return True
+
+def _parse_name_status(output: str):
+    """Parse `git diff --name-status` output into a structured list."""
+    files = []
+    for line in output.strip().splitlines():
+        parts = line.split("\t")
+        if not parts:
+            continue
+        status = parts[0]
+        if status.startswith("R") and len(parts) >= 3:
+            files.append({"status": status, "old": parts[1], "new": parts[2]})
+        elif len(parts) >= 2:
+            files.append({"status": status, "path": parts[1]})
+    return files
+
+def filter_changed_files(file_statuses, include_func=should_include):
+    """Return paths allowed by `include_func` from parsed status data."""
+    allowed = []
+    for info in file_statuses:
+        status = info.get("status", "")
+        if status.startswith("R"):
+            old_path = info.get("old", "")
+            new_path = info.get("new", "")
+            if include_func(old_path) or include_func(new_path):
+                allowed.append(new_path)
+        else:
+            path = info.get("path", "")
+            if include_func(path):
+                allowed.append(path)
+    # remove duplicates while preserving order
+    seen = set()
+    unique = []
+    for p in allowed:
+        if p not in seen:
+            unique.append(p)
+            seen.add(p)
+    return unique
+
 class StackSpotAIError(Exception):
     """Custom exception for StackSpot AI errors."""
     pass
@@ -35,33 +80,30 @@ class RQCExecutionTimeoutError(Exception):
 def get_gitlab_mr_diff():
     """Get the GitLab MR diff using git commands - reliable approach."""
     import subprocess
-    
+
     source_branch = os.environ.get('CI_MERGE_REQUEST_SOURCE_BRANCH_NAME')
     target_branch = os.environ.get('CI_MERGE_REQUEST_TARGET_BRANCH_NAME', 'main')
     mr_iid = os.environ.get('CI_MERGE_REQUEST_IID')
-    
+
     logger.info(f"Fetching diff for MR {mr_iid} using git commands")
     logger.info(f"Source branch: {source_branch}")
     logger.info(f"Target branch: {target_branch}")
     logger.info(f"Method: Git commands (reliable, no API limitations)")
-    
+
     if not source_branch:
         logger.error("❌ CI_MERGE_REQUEST_SOURCE_BRANCH_NAME not available")
         raise ValueError("Source branch name required for git diff")
-    
+
     commit_sha = os.environ.get('CI_COMMIT_SHA')
     commit_before_sha = os.environ.get('CI_COMMIT_BEFORE_SHA')
-    
+
     logger.info(f"CI_COMMIT_SHA: {commit_sha}")
     logger.info(f"CI_COMMIT_BEFORE_SHA: {commit_before_sha}")
-    
-    git_command = ['git', 'diff', 'HEAD~1...HEAD']
-    logger.info(f"Using git command: {' '.join(git_command)}")
-    logger.info(f"Method: Git diff HEAD~1...HEAD (CI environment compatible)")
-    
+
     try:
-        result = subprocess.run(
-            git_command,
+        # Collect changed file paths
+        name_only = subprocess.run(
+            ['git', 'diff', '--name-only', 'HEAD~1...HEAD'],
             capture_output=True,
             text=True,
             encoding='utf-8',
@@ -69,50 +111,77 @@ def get_gitlab_mr_diff():
             timeout=60,
             cwd=os.getcwd()
         )
-        
-        if result.returncode == 0:
-            logger.info(f"✅ Git diff successful")
-            logger.info(f"Git command return code: {result.returncode}")
-            
-            diff_content = result.stdout
-            diff_content = validate_encoding(diff_content)
-            logger.info(f"Retrieved diff with {len(diff_content)} characters")
-            logger.info(f"Diff encoding validated, size: {len(diff_content)} chars")
-            
-            if not diff_content.strip():
-                logger.warning("⚠️ Empty diff - no changes between branches")
-                return ""
-            
-            lines = diff_content.count('\n')
-            logger.info(f"Diff contains {lines} lines")
+        logger.info(f"Diff file list (HEAD~1...HEAD):\n{name_only.stdout}")
 
-            diff_files = subprocess.run(
-                ['git', 'diff', '--name-only', 'HEAD~1...HEAD'],
+        name_status = subprocess.run(
+            ['git', 'diff', '--name-status', 'HEAD~1...HEAD'],
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            timeout=60,
+            cwd=os.getcwd()
+        )
+        file_statuses = _parse_name_status(name_status.stdout)
+
+        allowed_paths = filter_changed_files(file_statuses, should_include)
+        if not allowed_paths:
+            logger.info("No files matched filter; returning empty diff")
+            return ""
+
+        logger.info(f"Allowed paths after filtering: {allowed_paths}")
+
+        # Generate diff only for allowed paths, chunking if necessary
+        diff_chunks = []
+        chunk_size = 100
+        for i in range(0, len(allowed_paths), chunk_size):
+            cmd = ['git', 'diff', 'HEAD~1...HEAD', '--'] + allowed_paths[i:i + chunk_size]
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                timeout=60,
+                cwd=os.getcwd()
+            )
+            if result.returncode != 0:
+                logger.error(
+                    f"❌ Git command failed (code {result.returncode}): {result.stderr[:200]}"
+                )
+                raise ValueError("Git diff command failed in CI environment")
+            diff_chunks.append(result.stdout)
+
+        diff_content = ''.join(diff_chunks)
+        diff_content = validate_encoding(diff_content)
+        logger.info(f"Retrieved diff with {len(diff_content)} characters")
+        logger.info(f"Diff encoding validated, size: {len(diff_content)} chars")
+
+        if not diff_content.strip():
+            logger.warning("⚠️ Empty diff - no changes between branches")
+            return ""
+
+        lines = diff_content.count('\n')
+        logger.info(f"Diff contains {lines} lines")
+
+        if commit_sha:
+            result_files = subprocess.run(
+                ['git', 'diff', '--name-only', f"{target_branch}...{commit_sha}"],
                 capture_output=True,
                 text=True,
                 timeout=60
             )
-            logger.info(f"Diff file list (HEAD~1...HEAD):\n{diff_files.stdout}")
+            logger.info(
+                f"Files vs target branch ({target_branch}...{commit_sha}):\n{result_files.stdout}"
+            )
 
-            if commit_sha:
-                result_files = subprocess.run(
-                    ['git', 'diff', '--name-only', f"{target_branch}...{commit_sha}"],
-                    capture_output=True,
-                    text=True,
-                    timeout=60
-                )
-                logger.info(
-                    f"Files vs target branch ({target_branch}...{commit_sha}):\n{result_files.stdout}"
-                )
+        return diff_content.strip()
 
-            return diff_content.strip()
-        else:
-            logger.error(f"❌ Git command failed (code {result.returncode}): {result.stderr[:200]}")
-            raise ValueError("Git diff command failed in CI environment")
-            
     except FileNotFoundError:
         logger.error("❌ Git command not found. Ensure git is installed in CI environment.")
-        logger.error("❌ Check .gitlab-ci.yml before_script includes: apt-get update && apt-get install -y git")
+        logger.error(
+            "❌ Check .gitlab-ci.yml before_script includes: apt-get update && apt-get install -y git"
+        )
         raise ValueError("Git not available in CI environment")
     except subprocess.TimeoutExpired:
         logger.error("❌ Git command timed out")
