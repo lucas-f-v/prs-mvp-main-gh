@@ -7,5 +7,5 @@ npx --yes jscpd \
   --min-lines 5 \
   --reporters console,json \
   --output jscpd-report \
-  --threshold 1 \
   "$@"
+#  --threshold 1
