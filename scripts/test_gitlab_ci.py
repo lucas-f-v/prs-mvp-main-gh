@@ -50,6 +50,14 @@ def test_should_include_no_config(monkeypatch):
 
     assert gls.should_include("any/path.txt") is True
 
+
+def test_diff_filter_denies_js():
+    """Default diff_filter.json should deny JavaScript files."""
+    import gitlab_ci_summarizer as gls
+
+    assert "*.js" in gls.DENY_PATTERNS
+    assert gls.should_include("sample.js") is False
+
 def test_environment_variables():
     """Test that all required environment variables are available."""
     logger.info("🧪 Testing Environment Variables...")
