@@ -35,6 +35,24 @@ else
   comment="$comment\n\n_No duplicates found_"
 fi
 
+# Report which files pass or are blocked by diff_filter.json
+diff_data=$(git ls-files | python - <<'PY'
+import sys, json
+sys.path.append('scripts')
+from gitlab_ci_summarizer import should_include
+
+files=[line.strip() for line in sys.stdin if line.strip()]
+passed=[f for f in files if should_include(f)]
+blocked=[f for f in files if f not in passed]
+print(json.dumps({'passed': passed, 'blocked': blocked}))
+PY
+)
+passed_list=$(echo "$diff_data" | jq -r '.passed[]?' 2>/dev/null | sed 's/^/- /')
+blocked_list=$(echo "$diff_data" | jq -r '.blocked[]?' 2>/dev/null | sed 's/^/- /')
+[ -z "$passed_list" ] && passed_list="- (none)"
+[ -z "$blocked_list" ] && blocked_list="- (none)"
+comment="$comment\n\n**Diff Filter Results**\n\n_Passed files:_\n$passed_list\n\n_Blocked files:_\n$blocked_list"
+
 curl --silent --show-error --fail \
   --request POST \
   --header "PRIVATE-TOKEN: $GITLAB_PERSONAL_TOKEN" \

@@ -58,6 +58,18 @@ def test_diff_filter_denies_js():
     assert "*.js" in gls.DENY_PATTERNS
     assert gls.should_include("sample.js") is False
 
+def test_diff_filter_lists():
+    """should_include helps separate passed and blocked files."""
+    import gitlab_ci_summarizer as gls
+
+    files = ["sample.js", "scripts/test_gitlab_ci.py"]
+    passed = [f for f in files if gls.should_include(f)]
+    blocked = [f for f in files if f not in passed]
+
+    assert "scripts/test_gitlab_ci.py" in passed
+    assert "sample.js" in blocked
+
+
 def test_environment_variables():
     """Test that all required environment variables are available."""
     logger.info("🧪 Testing Environment Variables...")

@@ -68,6 +68,21 @@ duplicated blocks to the merge request:
 | Lines | First File | Second File |
 |---|---|---|
 | 12 | src/app.py:10-21 | src/utils/helpers.py:42-53 |
+
+```
+
+The comment also lists which files passed or were blocked by the optional
+`diff_filter.json`:
+
+```markdown
+**Diff Filter Results**
+
+_Passed files:_
+- scripts/post-jscpd-comment.sh
+
+_Blocked files:_
+- sample.js
+
 ```
 
 To try it locally:
