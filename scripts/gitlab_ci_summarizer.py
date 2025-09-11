@@ -7,6 +7,7 @@ import requests
 from json import dumps, loads
 from time import sleep
 from urllib.parse import quote_plus
+from fnmatch import fnmatch
 import logging
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -24,13 +25,41 @@ RQC_TIMEOUT_MINUTES = 15
 RQC_SECONDS_TO_WAIT = 10
 RQC_TIMEOUT_LIMIT = int((RQC_TIMEOUT_MINUTES * 60) / RQC_SECONDS_TO_WAIT)
 
-def should_include(path: str) -> bool:
-    """Determine if a file path should be included in the diff.
 
-    This default implementation includes all paths.  Tests can inject a
-    different function to apply custom allow/deny rules.
+def load_diff_filter(path: str = "diff_filter.json"):
+    """Load allow/deny glob patterns from a JSON config file.
+
+    Returns two lists: (allow, deny). If the file is missing or malformed,
+    empty lists are returned.
     """
-    return True
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = loads(f.read())
+        allow = data.get("allow", [])
+        deny = data.get("deny", [])
+        if not isinstance(allow, list) or not isinstance(deny, list):
+            return [], []
+        return allow, deny
+    except Exception:
+        return [], []
+
+
+ALLOW_PATTERNS, DENY_PATTERNS = load_diff_filter()
+
+
+def should_include(path: str) -> bool:
+    """Determine if a file path should be included in the diff."""
+    for pattern in DENY_PATTERNS:
+        if fnmatch(path, pattern):
+            return False
+
+    if not ALLOW_PATTERNS:
+        return True
+
+    for pattern in ALLOW_PATTERNS:
+        if fnmatch(path, pattern):
+            return True
+    return False
 
 def _parse_name_status(output: str):
     """Parse `git diff --name-status` output into a structured list."""

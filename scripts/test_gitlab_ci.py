@@ -8,6 +8,48 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+
+def test_load_diff_filter_missing(tmp_path):
+    """load_diff_filter returns empty lists when file is missing."""
+    from gitlab_ci_summarizer import load_diff_filter
+
+    allow, deny = load_diff_filter(str(tmp_path / "missing.json"))
+    assert allow == []
+    assert deny == []
+
+
+def test_load_diff_filter_malformed(tmp_path):
+    """Malformed JSON should yield empty allow/deny lists."""
+    from gitlab_ci_summarizer import load_diff_filter
+
+    cfg = tmp_path / "diff_filter.json"
+    cfg.write_text("{", encoding="utf-8")
+    allow, deny = load_diff_filter(str(cfg))
+    assert allow == []
+    assert deny == []
+
+
+def test_should_include_allow_deny(monkeypatch):
+    """should_include respects allow and deny glob patterns."""
+    import gitlab_ci_summarizer as gls
+
+    monkeypatch.setattr(gls, "ALLOW_PATTERNS", ["src/*.py"])
+    monkeypatch.setattr(gls, "DENY_PATTERNS", ["src/tests/*"])
+
+    assert gls.should_include("src/main.py") is True
+    assert gls.should_include("src/tests/test_main.py") is False
+    assert gls.should_include("docs/readme.md") is False
+
+
+def test_should_include_no_config(monkeypatch):
+    """With no allow or deny patterns all files are included."""
+    import gitlab_ci_summarizer as gls
+
+    monkeypatch.setattr(gls, "ALLOW_PATTERNS", [])
+    monkeypatch.setattr(gls, "DENY_PATTERNS", [])
+
+    assert gls.should_include("any/path.txt") is True
+
 def test_environment_variables():
     """Test that all required environment variables are available."""
     logger.info("🧪 Testing Environment Variables...")
