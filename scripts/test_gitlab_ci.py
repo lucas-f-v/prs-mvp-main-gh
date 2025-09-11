@@ -271,7 +271,28 @@ def test_stackspot_credentials():
         logger.info(f"   Client Secret: {client_secret[:4]}...{client_secret[-4:]} ({len(client_secret)} chars)")
     if client_realm:
         logger.info(f"   Realm: {client_realm}")
-    
+
+    return True
+
+def test_filter_changed_files():
+    """Verify file filtering logic with mock data."""
+    from gitlab_ci_summarizer import filter_changed_files
+
+    mock_files = [
+        {'status': 'M', 'path': 'src/app.py'},
+        {'status': 'A', 'path': 'README.md'},
+        {'status': 'D', 'path': 'src/old.py'},
+        {'status': 'R100', 'old': 'src/old_name.py', 'new': 'src/new_name.py'},
+    ]
+
+    def mock_should_include(path):
+        return path.startswith('src/')
+
+    allowed = filter_changed_files(mock_files, mock_should_include)
+    expected = ['src/app.py', 'src/old.py', 'src/new_name.py']
+
+    assert allowed == expected, f"Expected {expected}, got {allowed}"
+    logger.info("✅ Filtering logic works as expected")
     return True
 
 def main():
@@ -283,7 +304,8 @@ def main():
         test_environment_variables,
         test_imports,
         test_gitlab_api_access,
-        test_stackspot_credentials
+        test_stackspot_credentials,
+        test_filter_changed_files
     ]
     
     passed = 0

@@ -4,6 +4,20 @@
 
 This project provides a **zero-infrastructure** solution for automatically generating AI summaries of GitLab merge requests using StackSpot AI, running entirely within GitLab's CI/CD pipeline.
 
+## Table of Contents
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [How It Works](#how-it-works)
+- [Project Structure](#project-structure)
+- [Advanced Setup](#advanced-setup)
+- [Comparison with AWS Version](#comparison-with-aws-version)
+- [Diff Filtering](#diff-filtering)
+- [Troubleshooting](#troubleshooting)
+- [Monitoring and Performance](#monitoring-and-performance)
+- [Requirements](#requirements)
+- [Support](#support)
+- [Success](#success)
+
 ## ✨ Features
 
 - ✅ **Zero Infrastructure** - No AWS services or external hosting required
@@ -188,6 +202,21 @@ rules:
 | **Deployment** | Terraform + ECS | Git push |
 | **Latency** | ~1-2 seconds | < 1 second |
 | **Maintenance** | High | Zero |
+
+## 🧹 Diff Filtering
+
+Control which files are summarized by editing `should_include` in
+`scripts/gitlab_ci_summarizer.py`. Only paths that return `True` are sent to
+StackSpot AI.
+
+```python
+def should_include(path: str) -> bool:
+    allowed_prefixes = ["src/", "docs/"]
+    return any(path.startswith(p) for p in allowed_prefixes)
+```
+
+For testability, `filter_changed_files` accepts a custom predicate, letting you
+inject different allow/deny rules when needed.
 
 ## 🔍 Troubleshooting
 
