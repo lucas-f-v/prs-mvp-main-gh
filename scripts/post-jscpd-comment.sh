@@ -27,13 +27,12 @@ percent=$(jq '.statistics.total.percentage' "$REPORT")
 
 comment=$(printf '🧬 **jscpd Report**\n\n- Clones: %s\n- Duplicated lines: %s / %s (%.2f%%)' "$clones" "$dup_lines" "$lines" "$percent")
 
-DIFF_FILTER="diff-filter-report.json"
-if [ -f "$DIFF_FILTER" ]; then
-  analyzed_list=$(jq -r '(.analyzed // []) | map("- " + .) | join("\n")' "$DIFF_FILTER")
-  ignored_list=$(jq -r '(.ignored // []) | map("- " + .) | join("\n")' "$DIFF_FILTER")
-  [ -n "$analyzed_list" ] || analyzed_list='- None'
-  [ -n "$ignored_list" ] || ignored_list='- None'
-  comment="$comment\n\n**Analyzed files**\n$analyzed_list\n\n**Ignored files**\n$ignored_list"
+duplicates_count=$(jq '.duplicates | length' "$REPORT")
+if [ "$duplicates_count" -gt 0 ]; then
+  table_rows=$(jq -r '.duplicates[] | "| \(.lines) | \(.firstFile.name):\(.firstFile.start)-\(.firstFile.end) | \(.secondFile.name):\(.secondFile.start)-\(.secondFile.end) |"' "$REPORT")
+  comment="$comment\n\n| Lines | First File | Second File |\n|---|---|---|\n$table_rows"
+else
+  comment="$comment\n\n_No duplicates found_"
 fi
 
 curl --silent --show-error --fail \
