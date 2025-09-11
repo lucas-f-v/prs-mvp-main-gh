@@ -62,7 +62,17 @@ Create a merge request with code changes and watch the AI summary appear automat
 ### 5. Duplicate Code Report (optional)
 A `jscpd` job compares duplicate lines between the target branch and the merge
 result. It runs in the `code_quality` stage and posts a Markdown table to the
-merge request.
+merge request. Comments now list which files were analyzed and which were
+ignored:
+
+```markdown
+**Analyzed files**
+- src/app.py
+- src/utils/helpers.py
+
+**Ignored files**
+- test/test_app.py
+```
 
 To try it locally:
 
@@ -205,18 +215,23 @@ rules:
 
 ## 🧹 Diff Filtering
 
-Control which files are summarized by editing `should_include` in
-`scripts/gitlab_ci_summarizer.py`. Only paths that return `True` are sent to
-StackSpot AI.
+Fine‑tune which files are sent to StackSpot AI by adding a `diff_filter.json`
+file to your repository root. It uses simple allow/deny arrays of glob patterns:
 
-```python
-def should_include(path: str) -> bool:
-    allowed_prefixes = ["src/", "docs/"]
-    return any(path.startswith(p) for p in allowed_prefixes)
+```json
+{
+  "allow": ["src/**", "docs/**"],
+  "deny": ["src/vendor/**", "*.md"]
+}
 ```
 
-For testability, `filter_changed_files` accepts a custom predicate, letting you
-inject different allow/deny rules when needed.
+If the `allow` list is empty, every file is considered allowed unless a `deny`
+rule matches. When `allow` contains patterns, a path must match at least one of
+them and must not match any `deny` pattern. Deny rules always win when both
+match.
+
+When the pipeline runs it generates `diff-filter-report.json` showing which
+files were included or filtered out based on these rules.
 
 ## 🔍 Troubleshooting
 
