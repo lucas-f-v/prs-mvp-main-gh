@@ -27,6 +27,15 @@ percent=$(jq '.statistics.total.percentage' "$REPORT")
 
 comment=$(printf '🧬 **jscpd Report**\n\n- Clones: %s\n- Duplicated lines: %s / %s (%.2f%%)' "$clones" "$dup_lines" "$lines" "$percent")
 
+DIFF_FILTER="diff-filter-report.json"
+if [ -f "$DIFF_FILTER" ]; then
+  analyzed_list=$(jq -r '(.analyzed // []) | map("- " + .) | join("\n")' "$DIFF_FILTER")
+  ignored_list=$(jq -r '(.ignored // []) | map("- " + .) | join("\n")' "$DIFF_FILTER")
+  [ -n "$analyzed_list" ] || analyzed_list='- None'
+  [ -n "$ignored_list" ] || ignored_list='- None'
+  comment="$comment\n\n**Analyzed files**\n$analyzed_list\n\n**Ignored files**\n$ignored_list"
+fi
+
 curl --silent --show-error --fail \
   --request POST \
   --header "PRIVATE-TOKEN: $GITLAB_PERSONAL_TOKEN" \
