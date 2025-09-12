@@ -7,7 +7,7 @@ This repository uses [jscpd](https://github.com/kucherenko/jscpd) to detect dupl
 Make sure you have Node.js installed. Then run:
 
 ```sh
-./scripts/run-jscpd.sh
+python scripts/run-jscpd.py
 ```
 
 The script uses `npx` to download jscpd if necessary and scans the repository. The command exits with a non‑zero status when duplicates are found.
