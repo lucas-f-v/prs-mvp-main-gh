@@ -78,8 +78,7 @@ The comment also lists which files passed or were blocked by the optional
 **Diff Filter Results**
 
 _Passed files:_
-- scripts/post-jscpd-comment.sh
-
+- scripts/run-jscpd.py
 _Blocked files:_
 - sample.js
 
@@ -88,17 +87,14 @@ _Blocked files:_
 To try it locally:
 
 ```bash
-./scripts/run-jscpd-merge.sh
 CI_API_V4_URL=https://gitlab.com/api/v4 \
 CI_PROJECT_ID=123 \
 CI_MERGE_REQUEST_IID=1 \
 GITLAB_PERSONAL_TOKEN=your-token \
-./scripts/post-jscpd-merge-comment.sh
-```
+python scripts/run-jscpd.py merge --comment
 
-The scripts generate `jscpd-base.json` and `jscpd-merged.json` and clean up
-their temporary worktrees. The JSON files are ignored by git.
-
+The script generates `jscpd-base.json` and `jscpd-merged.json` and cleans up
+its temporary worktrees. The JSON files are ignored by git.
 ## 🔧 How It Works
 
 ### Hybrid Architecture
@@ -135,8 +131,7 @@ The pipeline automatically:
 ├── .gitlab-ci.yml                    # CI/CD pipeline configuration
 ├── scripts/
 │   ├── gitlab_ci_summarizer.py       # Main summarizer script
-│   ├── post-jscpd-merge-comment.sh   # Post duplicate code table to MR
-│   ├── run-jscpd-merge.sh            # Generate jscpd reports for base/merged code
+│   ├── run-jscpd.py                  # Duplicate code scan and MR comments
 │   └── test_gitlab_ci.py             # Configuration test script
 └── README.md                         # This file
 ```
